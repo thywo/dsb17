@@ -433,3 +433,72 @@ def batch_generator_train(files, train_csv_table, batch_size, npy=False, cv3D_si
 #     random.shuffle(files)
 #     counter = 0
 #     failed = 0
+
+
+def batch_generator_dat(files, train_csv_table, batch_size):
+    number_of_batches = np.ceil(len(files)/batch_size)
+    counter = 0
+    random.shuffle(files)
+    # next_files = copy.deepcopy(files)
+    # failed = 0
+
+    while True:
+        # batch_files = files[batch_size*counter+failed:batch_size*(counter+1)+failed]
+        image_list = []
+        mask_list = []
+        success = 0
+        problem_files=[]
+
+        # for f in files[batch_size*counter+failed:]:
+        for f in files[batch_size * counter:batch_size * (counter+1)]:
+            # if success==batch_size:
+            #     break
+
+            image = load_array(f)
+            image_list.append([image])
+            patient_id = os.path.basename(os.path.dirname(f))
+            success += 1
+            try:
+                is_cancer = train_csv_table.loc[train_csv_table['id'] == patient_id]['cancer'].values[0]
+
+                if is_cancer == 0:
+                    mask = [1, 0]
+                    # mask = [1]
+                else:
+                    mask = [0, 1]
+                    # mask = [0]
+            except:
+                # print('Problem with %s' % patient_id)
+                mask = [0.5, 0.5]
+            mask_list.append(mask)
+        # print(Counter([image[0].shape for image in image_list]))
+        counter += 1
+        # print(image_list.shape)
+        # print(image_list[0].shape)
+        mask_list = np.array(mask_list)
+        # print(image_list.shape)
+        # print(image_list.shape)
+        # print(mask_list.shape)
+        yield image_list, mask_list
+        # else:
+        #     # print(image_list)
+        #     print(mask_list)
+        #     print(patient_id)
+        #     # print(image_list.shape)
+        #     failed += 1
+        #     try:
+        #         next_files.remove(f)
+        #     except:
+        #         pass
+        #
+        #     yield np.zeros((batch_size, 1, cv3D_size, cv3D_size, cv3D_size)), np.array([[0]])
+
+        if counter== number_of_batches:
+            # print('Reported %s problems with files this epoch' % (len(files)-len(next_files)))
+            # files = next_files
+            # next_files = copy.deepcopy(files)
+            # print('length of new file list: %s' % len(files))
+
+            random.shuffle(files)
+            counter = 0
+            failed = 0
