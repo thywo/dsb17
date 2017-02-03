@@ -122,11 +122,16 @@ def create_submission(model, submission_name="subm_vgg_feat.csv", pad=600):
 
     print(Counter(all_patient_size))
     sample_subm.to_csv(submission_name, index=False)
+
+
 ######################################################
+################################################################################
 ######################################################
+
+
 pad_length=600
 
-inp = Input(pad_length, 512, 32, 32)
+inp = Input((pad_length, 512, 32, 32))
 x = TimeDistributed(Masking(mask_value=0.0))(inp)
 x = TimeDistributed(lrg_layers(x))
 x = BatchNormalization()(x)
