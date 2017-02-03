@@ -435,7 +435,7 @@ def batch_generator_train(files, train_csv_table, batch_size, npy=False, cv3D_si
 #     failed = 0
 
 
-def batch_generator_dat(files, train_csv_table, batch_size):
+def batch_generator_dat(files, train_csv_table, batch_size, pad=600):
     number_of_batches = np.ceil(len(files)/batch_size)
     counter = 0
     random.shuffle(files)
@@ -455,7 +455,15 @@ def batch_generator_dat(files, train_csv_table, batch_size):
             #     break
 
             image = load_array(f)
-            image_list.append([image])
+            padded_image = np.zeros((600, 512, 32, 32))
+            len_image = min(len(image), pad)
+            # print(len_image)
+            # image = np.expand_dims(np.expand_dims(image[:512], 1),0)
+            # print(image.shape)
+            # print(len_image)
+
+            padded_image[:len_image, :, :, :] = image[:pad]
+            image_list.append([padded_image])
             patient_id = os.path.basename(os.path.dirname(f))
             success += 1
             try:

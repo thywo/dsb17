@@ -7,10 +7,11 @@ import h5py
 import cv2
 import os
 import glob
+import random
 from keras.models import Sequential
 from keras.layers.core import Flatten, Dense, Dropout, Reshape, Lambda, Activation
 from keras.models import Model
-
+from keras.callbacks import Callback
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, Convolution1D, MaxPooling1D
 from keras.layers.convolutional import Convolution3D, MaxPooling3D, ZeroPadding3D, AveragePooling3D
 from keras.layers.pooling import GlobalMaxPooling3D, GlobalAveragePooling2D, GlobalMaxPooling2D
@@ -30,7 +31,7 @@ from collections import Counter
 import sys
 import shutil
 from keras.layers.wrappers import TimeDistributed
-from my_utils_feat import batch_generator_dat
+from my_utils_feat import batch_generator_dat, load_array
 
 def lrg_layers(x, nf=128, p=0.):
 
@@ -55,12 +56,77 @@ def lrg_layers(x, nf=128, p=0.):
     return x
 
 
+class print_pred(Callback):
+    def __init__(self):
+        self.list_pred = []
 
+    def on_epoch_end(self, epoch, logs={}):
+        pred = model.predict_generator(
+           batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length),3,2)
+        print('Prediction for last 3 examples of epoch: %s' %pred)
+
+        self.list_pred.append(pred)
+
+    def on_train_begin(self, logs={}):
+        pred = model.predict_generator(
+            batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length), 3, 2)
+        print('Prediction for first 3 examples: %s' %pred)
+        self.list_pred.append(pred)
+
+
+def get_train_single_fold(train_data, fraction):
+    ids = train_data['id'].values
+    random.shuffle(ids)
+    split_point = int(round(fraction*len(ids)))
+    train_list = ids[:split_point]
+    valid_list = ids[split_point:]
+    return train_list, valid_list
+
+
+def create_submission(model, submission_name="subm_vgg_feat.csv", pad=600):
+    sample_subm = pd.read_csv("../input/stage1_sample_submission.csv")
+    ids = sample_subm['id'].values
+    all_patient_size = []
+    for index_id, id in enumerate(ids):
+        print('Predict for patient {}, {} of {}'.format(id, index_id+1, len(ids)))
+        # files = glob.glob("../input/stage1/{}/*.dcm".format(id))
+        files = glob.glob("../input/results/conv_ft_512_{}.dat".format(id))
+
+        image_list = []
+        all_patient_size.append(len(files))
+        for f in files:
+            image = load_array(f)
+            padded_image = np.zeros((600, 512, 32, 32))
+            len_image = min(len(image), pad)
+            # print(len_image)
+            # image = np.expand_dims(np.expand_dims(image[:512], 1),0)
+            # print(image.shape)
+            # print(len_image)
+
+            padded_image[:len_image, :, :, :] = image[:pad]
+            image_list.append([padded_image])
+
+        batch_size = len(image_list)
+        if batch_size>0:
+            # image_list = np.swapaxes(image_list,1,2)
+
+            predictions = model.predict(image_list, verbose=1, batch_size=batch_size)
+            pred_value = predictions[:, 1].mean()
+            pred_value_2 = predictions[0, 1].mean()
+            if index_id%1==0:
+                print('pred %s' %pred_value)
+                print('pred_2 %s' %pred_value_2)
+        else:
+            pred_value=0.5
+        sample_subm.loc[sample_subm['id'] == id, 'cancer'] = pred_value
+
+    print(Counter(all_patient_size))
+    sample_subm.to_csv(submission_name, index=False)
 ######################################################
 ######################################################
+pad_length=600
 
-
-inp = Input(600, 512, 32, 32)
+inp = Input(pad_length, 512, 32, 32)
 x = TimeDistributed(Masking(mask_value=0.0))(inp)
 x = TimeDistributed(lrg_layers(x))
 x = BatchNormalization()(x)
@@ -68,16 +134,68 @@ x = Dense(2,activation='softmax')(x)
 model = Model(inp, x)
 model.compile(Adam(lr=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
 
-train_files =
+train_csv_table = pd.read_csv('../input/stage1_labels.csv')
+train_patients, valid_patients = get_train_single_fold(train_csv_table, 0.2)
+print('Train patients: {}'.format(len(train_patients)))
+print('Valid patients: {}'.format(len(valid_patients)))
+all_patient_size = []
+train_files = []
+for p in train_patients:
+    new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
+    train_files += new_files
+    all_patient_size.append(len(new_files))
+print('Number of train files: {}'.format(len(train_files)))
 
+valid_files = []
+for p in valid_patients:
+    new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
+
+    valid_files += new_files
+    all_patient_size.append(len(new_files))
+print('Number of valid files: {}'.format(len(valid_files)))
+
+print(Counter(all_patient_size))
+
+plot_acc_and_loss = True
+
+patience = 3
+n_epoch = 10
 batch_size = 1
-model.fit_generator(batch_generator_dat(train_files,train_csv_table,batch_size), trn_labels, batch_size=batch_size, nb_epoch=3,
-             validation_data=([conv_val_feat, val_sizes], val_labels))
+callbacks = list(
+EarlyStopping(monitor='val_loss', patience=patience, verbose=0),
+# ModelCheckpoint('best.hdf5', monitor='val_loss', save_best_only=True, verbose=0),
+)
+
+callbacks.append(print_pred())
+
+fit = model.fit_generator(batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length), len(train_files),
+                    n_epoch,callbacks=callbacks,
+                    validation_data=batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length),
+                    nb_val_samples=len(valid_files),class_weight={},max_q_size=2)
 
 
+if plot_acc_and_loss:
+    # summarize history for accuracy
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(fit.history['acc']);
+    plt.plot(fit.history['val_acc']);
+    plt.title('model accuracy');
+    plt.ylabel('accuracy');
+    plt.xlabel('epoch');
+    plt.legend(['train', 'valid'], loc='upper left');
 
+    # summarize history for loss
+    plt.subplot(1, 2, 2)
+    plt.plot(fit.history['loss']);
+    plt.plot(fit.history['val_loss']);
+    plt.title('model loss');
+    plt.ylabel('loss');
+    plt.xlabel('epoch');
+    plt.legend(['train', 'valid'], loc='upper left');
+    plt.show()
 
-
+create_submission(model,"vgg_feat_v1.csv", pad=pad_length)
 #
 # x1 = BatchNormalization(axis=1)(inp)
 # x1 = incep_block(x1)
