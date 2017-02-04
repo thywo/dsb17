@@ -14,7 +14,7 @@ from keras.models import Model
 from keras.callbacks import Callback
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, Convolution1D, MaxPooling1D
 from keras.layers.convolutional import Convolution3D, MaxPooling3D, ZeroPadding3D, AveragePooling3D
-from keras.layers.pooling import GlobalMaxPooling3D, GlobalAveragePooling2D, GlobalMaxPooling2D
+from keras.layers.pooling import GlobalMaxPooling3D, GlobalAveragePooling2D, GlobalMaxPooling2D, GlobalMaxPooling1D
 from keras.layers import Input, Dense
 from keras.layers.core import Masking
 from keras.optimizers import Adadelta, Adam
@@ -33,25 +33,46 @@ import shutil
 from keras.layers.wrappers import TimeDistributed
 from my_utils_feat import batch_generator_dat, load_array
 
-def lrg_layers(x, nf=128, p=0.):
+def lrg_layers(x, nf=128, p=0., time_distributed=False, output_dim=8):
+    if time_distributed:
+        # x = TimeDistributed(MaxPooling2D())(x)
 
-    x = BatchNormalization(axis=1)(x)
-    x = Convolution2D(nf,3,3, activation='relu', border_mode='same')(x)
-    x = BatchNormalization(axis=1)(x)
-    x = MaxPooling2D()(x)
+        x = BatchNormalization(axis=1)(x)
+        x = TimeDistributed(Convolution2D(nf, 3, 3, activation='relu', border_mode='same'))(x)
+        x = BatchNormalization(axis=1)(x)
+        x = TimeDistributed(MaxPooling2D())(x)
 
-    x = Convolution2D(nf,3,3, activation='relu', border_mode='same')(x)
-    x = BatchNormalization(axis=1)(x)
-    x = MaxPooling2D()(x)
+        x = TimeDistributed(Convolution2D(nf, 3, 3, activation='relu', border_mode='same'))(x)
+        x = BatchNormalization(axis=1)(x)
+        x = TimeDistributed(MaxPooling2D())(x)
 
-    x = Convolution2D(nf,3,3, activation='relu', border_mode='same')(x)
-    x = BatchNormalization(axis=1)(x)
-    x = MaxPooling2D((1,2))(x)
+        x = TimeDistributed(Convolution2D(nf, 3, 3, activation='relu', border_mode='same'))(x)
+        x = BatchNormalization(axis=1)(x)
+        x = TimeDistributed(MaxPooling2D((1, 2)))(x)
 
-    x = Convolution2D(8,3,3, border_mode='same')(x)
-    x = Dropout(p)(x)
-    x = GlobalAveragePooling2D()(x)
-    x = Activation('softmax')(x)
+        x = TimeDistributed(Convolution2D(output_dim, 3, 3, border_mode='same'))(x)
+        x = TimeDistributed(Dropout(p))(x)
+        x = TimeDistributed(GlobalAveragePooling2D())(x)
+        # x = TimeDisributed(tActivation('softmax'))(x)
+        x = Activation('relu')(x)
+    else:
+        x = BatchNormalization(axis=1)(x)
+        x = Convolution2D(nf,3,3, activation='relu', border_mode='same')(x)
+        x = BatchNormalization(axis=1)(x)
+        x = MaxPooling2D()(x)
+
+        x = Convolution2D(nf,3,3, activation='relu', border_mode='same')(x)
+        x = BatchNormalization(axis=1)(x)
+        x = MaxPooling2D()(x)
+
+        x = Convolution2D(nf,3,3, activation='relu', border_mode='same')(x)
+        x = BatchNormalization(axis=1)(x)
+        x = MaxPooling2D((1,2))(x)
+
+        x = Convolution2D(output_dim,3,3, border_mode='same')(x)
+        x = Dropout(p)(x)
+        x = GlobalAveragePooling2D()(x)
+        x = Activation('softmax')(x)
 
     return x
 
@@ -62,16 +83,16 @@ class print_pred(Callback):
 
     def on_epoch_end(self, epoch, logs={}):
         pred = model.predict_generator(
-           batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length),3,2)
+           batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length),2,1)
         print('Prediction for last 3 examples of epoch: %s' %pred)
 
         self.list_pred.append(pred)
 
-    def on_train_begin(self, logs={}):
-        pred = model.predict_generator(
-            batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length), 3, 2)
-        print('Prediction for first 3 examples: %s' %pred)
-        self.list_pred.append(pred)
+    # def on_train_begin(self, logs={}):
+    #     pred = model.predict_generator(
+    #         batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length), 2, 1)
+    #     print('Prediction for first 3 examples: %s' %pred)
+    #     self.list_pred.append(pred)
 
 
 def get_train_single_fold(train_data, fraction):
@@ -104,7 +125,8 @@ def create_submission(model, submission_name="subm_vgg_feat.csv", pad=600):
             # print(len_image)
 
             padded_image[:len_image, :, :, :] = image[:pad]
-            image_list.append([padded_image])
+            image_list.append(padded_image)
+            image_list = np.array(image_list)
 
         batch_size = len(image_list)
         if batch_size>0:
@@ -127,20 +149,26 @@ def create_submission(model, submission_name="subm_vgg_feat.csv", pad=600):
 ######################################################
 ################################################################################
 ######################################################
+from keras.backend.theano_backend import squeeze
 
-
-pad_length=600
+pad_length=3
 
 inp = Input((pad_length, 512, 32, 32))
-x = TimeDistributed(Masking(mask_value=0.0))(inp)
-x = TimeDistributed(lrg_layers(x))
+print(inp.shape)
+# print(inp.output_shape())
+# x = Masking(mask_value=0.0)(inp)
+x = lrg_layers(inp,nf=4, time_distributed=True, output_dim=4)
 x = BatchNormalization()(x)
+# x = GlobalMaxPooling1D()(x)
+x = Flatten()(x)
+
 x = Dense(2,activation='softmax')(x)
 model = Model(inp, x)
+print(model.summary())
 model.compile(Adam(lr=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
 
 train_csv_table = pd.read_csv('../input/stage1_labels.csv')
-train_patients, valid_patients = get_train_single_fold(train_csv_table, 0.2)
+train_patients, valid_patients = get_train_single_fold(train_csv_table, 0.87)
 print('Train patients: {}'.format(len(train_patients)))
 print('Valid patients: {}'.format(len(valid_patients)))
 all_patient_size = []
@@ -164,21 +192,38 @@ print(Counter(all_patient_size))
 plot_acc_and_loss = True
 
 patience = 3
-n_epoch = 10
+n_epoch = 12
 batch_size = 1
-callbacks = list(
-EarlyStopping(monitor='val_loss', patience=patience, verbose=0),
+train_max =10
+valid_max = 10
+# callbacks = [EarlyStopping(monitor='val_loss', patience=patience, verbose=0),]
 # ModelCheckpoint('best.hdf5', monitor='val_loss', save_best_only=True, verbose=0),
-)
+callbacks = []
 
-callbacks.append(print_pred())
+# callbacks.append(print_pred())
+batch_generator_train = batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length,
+                                            print_padded=False, number=1)
+fit = model.fit_generator(batch_generator_train,
+                          train_max,
+                    n_epoch,#callbacks=callbacks,
+                    class_weight={},max_q_size=1)
 
-fit = model.fit_generator(batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length), len(train_files),
-                    n_epoch,callbacks=callbacks,
-                    validation_data=batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length),
-                    nb_val_samples=len(valid_files),class_weight={},max_q_size=2)
+# del batch_generator_train
+print('length valid files:')
+print(len(valid_files))
+import time
+valid_max = 6
+time.sleep(5)
+import gc
+gc.collect()
+print('pad: %s' %pad_length)
+batch_generator_train = batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length,
+                                                        print_padded=True, number=2)
 
+evaluate = model.evaluate_generator(batch_generator_train,
+                    val_samples=valid_max,max_q_size=1)
 
+print('training finished')
 if plot_acc_and_loss:
     # summarize history for accuracy
     plt.figure(figsize=(15, 5))
@@ -202,6 +247,27 @@ if plot_acc_and_loss:
 
 create_submission(model,"vgg_feat_v1.csv", pad=pad_length)
 #
+
+
+#
+# MemoryError: Error allocating 1258291200 bytes of device memory (CNMEM_STATUS_OUT_OF_MEMORY).
+# Apply node that caused the error: if{inplace,gpu}(keras_learning_phase, GpuElemwise{Composite{((i0 * i1) + i2)}}[(0, 0)].0, GpuElemwise{Composite{(((i0 - i1) * i2) + i3)}}[(0, 0)].0)
+# Toposort index: 225
+# Inputs types: [TensorType(uint8, scalar), CudaNdarrayType(float32, 5D), CudaNdarrayType(float32, 5D)]
+# Inputs shapes: [(), 'No shapes', (1, 600, 512, 32, 32)]
+# Inputs strides: [(), 'No strides', (0, 524288, 1024, 32, 1)]
+#
+#
+
+
+
+
+
+
+
+
+
+
 # x1 = BatchNormalization(axis=1)(inp)
 # x1 = incep_block(x1)
 # x1 = incep_block(x1)

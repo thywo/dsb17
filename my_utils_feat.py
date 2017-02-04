@@ -167,8 +167,31 @@ def save_array(fname, arr):
     c.flush()
 
 
-def load_array(fname):
-    return bcolz.open(fname)[:]
+def load_array(fname, dim):
+    array = bcolz.open(fname, mode='a')
+    print(sys.getsizeof(array))
+    print(type(array))
+    print(array.chunklen)
+    print(array.cbytes)
+    print(array.dtype)
+    print(array.itemsize)
+    print(array.len)
+    print(array.nbytes)
+    print(array.shape)
+    array.resize(dim)
+    print(array.shape)
+    print(array.nchunks)
+    print(array.nleftover)
+    array.free_cachemem()
+    print(array.nbytes)
+    # try:
+    #     array=array[:]
+    # except:
+    #     print("couldn't load numpy")
+    #     array = np.zeros((dim,512,32,32))
+    print(array.shape)
+    print(sys.getsizeof(array))
+    return array
 
 
 def mk_size(img, r2c):
@@ -435,7 +458,8 @@ def batch_generator_train(files, train_csv_table, batch_size, npy=False, cv3D_si
 #     failed = 0
 
 
-def batch_generator_dat(files, train_csv_table, batch_size, pad=600):
+def batch_generator_dat(files, train_csv_table, batch_size, pad=600, print_padded=False, number=1):
+    print('new generator created')
     number_of_batches = np.ceil(len(files)/batch_size)
     counter = 0
     random.shuffle(files)
@@ -448,14 +472,26 @@ def batch_generator_dat(files, train_csv_table, batch_size, pad=600):
         mask_list = []
         success = 0
         problem_files=[]
-
+        batch_files = files[batch_size * counter:batch_size * (counter+1)]
         # for f in files[batch_size*counter+failed:]:
-        for f in files[batch_size * counter:batch_size * (counter+1)]:
+        for f in batch_files:
+            print(f, number)
+            print(files[batch_size * counter:batch_size * (counter+1)])
             # if success==batch_size:
             #     break
-
-            image = load_array(f)
-            padded_image = np.zeros((600, 512, 32, 32))
+            try:
+                print("loading")
+                image = load_array(f, dim=pad)
+                print(sys.getsizeof(image))
+                image = image[:]
+                print(type(image))
+                print(sys.getsizeof(image))
+                print(image.shape)
+            except:
+                print("couldn't load")
+            if print_padded:
+                print('loaded %s %s' %(f,number))
+            padded_image = np.zeros((pad, 512, 32, 32))
             len_image = min(len(image), pad)
             # print(len_image)
             # image = np.expand_dims(np.expand_dims(image[:512], 1),0)
@@ -463,7 +499,9 @@ def batch_generator_dat(files, train_csv_table, batch_size, pad=600):
             # print(len_image)
 
             padded_image[:len_image, :, :, :] = image[:pad]
-            image_list.append([padded_image])
+            if print_padded:
+                print('padded %s %s' %(f,number))
+            image_list.append(padded_image)
             patient_id = os.path.basename(os.path.dirname(f))
             success += 1
             try:
@@ -479,34 +517,17 @@ def batch_generator_dat(files, train_csv_table, batch_size, pad=600):
                 # print('Problem with %s' % patient_id)
                 mask = [0.5, 0.5]
             mask_list.append(mask)
-        # print(Counter([image[0].shape for image in image_list]))
         counter += 1
-        # print(image_list.shape)
-        # print(image_list[0].shape)
         mask_list = np.array(mask_list)
-        # print(image_list.shape)
-        # print(image_list.shape)
-        # print(mask_list.shape)
+        image_list = np.array(image_list)
+        del padded_image, image
+        if print_padded:
+            print(len(image_list))
+            print(image_list[0].shape)
         yield image_list, mask_list
-        # else:
-        #     # print(image_list)
-        #     print(mask_list)
-        #     print(patient_id)
-        #     # print(image_list.shape)
-        #     failed += 1
-        #     try:
-        #         next_files.remove(f)
-        #     except:
-        #         pass
-        #
-        #     yield np.zeros((batch_size, 1, cv3D_size, cv3D_size, cv3D_size)), np.array([[0]])
+        del image_list, mask_list
 
         if counter== number_of_batches:
-            # print('Reported %s problems with files this epoch' % (len(files)-len(next_files)))
-            # files = next_files
-            # next_files = copy.deepcopy(files)
-            # print('length of new file list: %s' % len(files))
-
             random.shuffle(files)
             counter = 0
             failed = 0

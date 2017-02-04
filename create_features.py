@@ -20,24 +20,28 @@ nb_train= len(glob.glob(path+'*/*.dcm'))
 # nb_train_samples = 500
 # nb_val= len(glob.glob(path+'valid/*/*.jpg'))
 # nb_test= len(glob.glob('input/test/*/*.jpg'))
-
+import numpy as np
 vgg512 = Vgg16BN((512, 512), use_preprocess=True).model
 vgg512.pop()
 print(vgg512.input_shape, vgg512.output_shape)
 vgg512.compile(Adam(), 'categorical_crossentropy', metrics=['accuracy'])
+import time
 
 train_csv_table = pd.read_csv('../input/stage1_labels.csv')
+t0=time.time()
 
 print(len([x[0] for x in os.walk(path)][1:]))
 print(len(glob.glob(path+'*/*.dcm')))
 patient_ids = [x[0].split('/')[-1] for x in os.walk(path)][1:]
-
 for an_index,an_id in enumerate(patient_ids):
     if an_index %100==0:
+        print(time.time()-t0)
+        t0 = time.time()
+
         print('%s done on %s total' %(an_index, len(patient_ids)))
     # if not os.path.exists(path.split('stage1')[0] + 'results'+str(an_id)):
     #     os.makedirs(path.split('stage1')[0] + 'results'+str(an_id))
-    if os.path.exists(path.split('stage1')[0] + 'results/conv_ft_512_'+str(an_id)+'.dat'):
+    if os.path.exists(path.split('stage1')[0] + 'results_npz/conv_ft_512_'+str(an_id)+'.npz'):
         print('%s already converted' % an_id)
         continue
     images_patient = glob.glob(path + an_id + '/*.dcm')
@@ -46,9 +50,11 @@ for an_index,an_id in enumerate(patient_ids):
 
     conv_trn_feat = vgg512.predict_generator(trn, len(images_patient))
 
-    save_array(path.split('stage1')[0] + 'results/conv_ft_512_'+str(an_id)+'.dat', conv_trn_feat)
+    # save_array(path.split('stage1')[0] + 'results_npz/conv_ft_512_'+str(an_id), conv_trn_feat)
 
-    print(conv_trn_feat.shape, len(images_patient))
+    np.savez(path.split('stage1')[0] + 'results_npz/conv_ft_512_'+str(an_id), conv_trn_feat)
+
+    # print(conv_trn_feat.shape, len(images_patient))
     del conv_trn_feat
 
 
