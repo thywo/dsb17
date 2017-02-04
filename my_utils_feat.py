@@ -531,3 +531,82 @@ def batch_generator_dat(files, train_csv_table, batch_size, pad=600, print_padde
             random.shuffle(files)
             counter = 0
             failed = 0
+
+
+def batch_generator_npz(files, train_csv_table, batch_size, pad=600, print_padded=False, number=1):
+    print('new generator created')
+    number_of_batches = np.ceil(len(files)/batch_size)
+    counter = 0
+    random.shuffle(files)
+    # next_files = copy.deepcopy(files)
+    # failed = 0
+
+    while True:
+        # batch_files = files[batch_size*counter+failed:batch_size*(counter+1)+failed]
+        image_list = []
+        mask_list = []
+        success = 0
+        problem_files=[]
+        batch_files = files[batch_size * counter:batch_size * (counter+1)]
+        # for f in files[batch_size*counter+failed:]:
+        for f in batch_files:
+            if print_padded:
+                print(f, number)
+                print(files[batch_size * counter:batch_size * (counter+1)])
+            # if success==batch_size:
+            #     break
+            try:
+                if print_padded:
+                    print("loading")
+                image = np.load(f)
+                if print_padded:
+                    print(sys.getsizeof(image))
+                image = image[:pad]
+                if print_padded:
+                    print(type(image))
+                    print(sys.getsizeof(image))
+                    print(image.shape)
+            except:
+                print("couldn't load")
+            if print_padded:
+                print('loaded %s %s' %(f,number))
+            padded_image = np.zeros((pad, 512, 32, 32))
+            len_image = min(len(image), pad)
+            # print(len_image)
+            # image = np.expand_dims(np.expand_dims(image[:512], 1),0)
+            # print(image.shape)
+            # print(len_image)
+
+            padded_image[:len_image, :, :, :] = image[:pad]
+            if print_padded:
+                print('padded %s %s' %(f,number))
+            image_list.append(padded_image)
+            patient_id = os.path.basename(os.path.dirname(f))
+            success += 1
+            try:
+                is_cancer = train_csv_table.loc[train_csv_table['id'] == patient_id]['cancer'].values[0]
+
+                if is_cancer == 0:
+                    mask = [1, 0]
+                    # mask = [1]
+                else:
+                    mask = [0, 1]
+                    # mask = [0]
+            except:
+                # print('Problem with %s' % patient_id)
+                mask = [0.5, 0.5]
+            mask_list.append(mask)
+        counter += 1
+        mask_list = np.array(mask_list)
+        image_list = np.array(image_list)
+        del padded_image, image
+        if print_padded:
+            print(len(image_list))
+            print(image_list[0].shape)
+        yield image_list, mask_list
+        del image_list, mask_list
+
+        if counter== number_of_batches:
+            random.shuffle(files)
+            counter = 0
+            failed = 0

@@ -31,7 +31,7 @@ from collections import Counter
 import sys
 import shutil
 from keras.layers.wrappers import TimeDistributed
-from my_utils_feat import batch_generator_dat, load_array
+from my_utils_feat import batch_generator_dat, load_array, batch_generator_npz
 
 def lrg_layers(x, nf=128, p=0., time_distributed=False, output_dim=8):
     if time_distributed:
@@ -173,15 +173,24 @@ print('Train patients: {}'.format(len(train_patients)))
 print('Valid patients: {}'.format(len(valid_patients)))
 all_patient_size = []
 train_files = []
+
+file_extension = 'npz'
+
 for p in train_patients:
-    new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
+    if file_extension=='npz':
+        new_files = glob.glob("../input/results/conv_ft_512_{}.nzp".format(p))
+    elif file_extension=='bat':
+        new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
     train_files += new_files
     all_patient_size.append(len(new_files))
 print('Number of train files: {}'.format(len(train_files)))
 
 valid_files = []
 for p in valid_patients:
-    new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
+    if file_extension=='npz':
+        new_files = glob.glob("../input/results/conv_ft_512_{}.nzp".format(p))
+    elif file_extension=='bat':
+        new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
 
     valid_files += new_files
     all_patient_size.append(len(new_files))
@@ -201,7 +210,11 @@ valid_max = 10
 callbacks = []
 
 # callbacks.append(print_pred())
-batch_generator_train = batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length,
+if file_extension=='npz':
+    batch_generator_train = batch_generator_npz(train_files,train_csv_table,batch_size, pad=pad_length,
+                                            print_padded=False, number=1)
+elif file_extension=='bat':
+    batch_generator_train = batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length,
                                             print_padded=False, number=1)
 fit = model.fit_generator(batch_generator_train,
                           train_max,
@@ -217,8 +230,14 @@ time.sleep(5)
 import gc
 gc.collect()
 print('pad: %s' %pad_length)
-batch_generator_train = batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length,
-                                                        print_padded=True, number=2)
+
+if file_extension=='npz':
+    batch_generator_train = batch_generator_npz(valid_files,train_csv_table,batch_size, pad=pad_length,
+                                            print_padded=False, number=1)
+
+elif file_extension=='bat':
+    batch_generator_train = batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length,
+                                                            print_padded=True, number=2)
 
 evaluate = model.evaluate_generator(batch_generator_train,
                     val_samples=valid_max,max_q_size=1)
