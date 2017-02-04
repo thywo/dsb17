@@ -82,8 +82,12 @@ class print_pred(Callback):
         self.list_pred = []
 
     def on_epoch_end(self, epoch, logs={}):
-        pred = model.predict_generator(
-           batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length),2,1)
+        if file_extension == 'bat':
+
+            pred = model.predict_generator(batch_generator_train,2,1)
+
+        elif file_extension=='npz':
+            pred = model.predict_generator(batch_generator_train,2,1)
         print('Prediction for last 3 examples of epoch: %s' %pred)
 
         self.list_pred.append(pred)
@@ -151,7 +155,7 @@ def create_submission(model, submission_name="subm_vgg_feat.csv", pad=600):
 ######################################################
 from keras.backend.theano_backend import squeeze
 
-pad_length=3
+pad_length=400
 
 inp = Input((pad_length, 512, 32, 32))
 print(inp.shape)
@@ -178,7 +182,7 @@ file_extension = 'npz'
 
 for p in train_patients:
     if file_extension=='npz':
-        new_files = glob.glob("../input/results/conv_ft_512_{}.nzp".format(p))
+        new_files = glob.glob("../input/results_npz/conv_ft_512_{}.npz".format(p))
     elif file_extension=='bat':
         new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
     train_files += new_files
@@ -188,7 +192,7 @@ print('Number of train files: {}'.format(len(train_files)))
 valid_files = []
 for p in valid_patients:
     if file_extension=='npz':
-        new_files = glob.glob("../input/results/conv_ft_512_{}.nzp".format(p))
+        new_files = glob.glob("../input/results_npz/conv_ft_512_{}.npz".format(p))
     elif file_extension=='bat':
         new_files = glob.glob("../input/results/conv_ft_512_{}.dat".format(p))
 
@@ -201,10 +205,10 @@ print(Counter(all_patient_size))
 plot_acc_and_loss = True
 
 patience = 3
-n_epoch = 12
+n_epoch = 8
 batch_size = 1
-train_max =10
-valid_max = 10
+train_max = 6
+valid_max = 5
 # callbacks = [EarlyStopping(monitor='val_loss', patience=patience, verbose=0),]
 # ModelCheckpoint('best.hdf5', monitor='val_loss', save_best_only=True, verbose=0),
 callbacks = []
@@ -212,35 +216,39 @@ callbacks = []
 # callbacks.append(print_pred())
 if file_extension=='npz':
     batch_generator_train = batch_generator_npz(train_files,train_csv_table,batch_size, pad=pad_length,
-                                            print_padded=False, number=1)
+                                            print_padded=True, number=1)
 elif file_extension=='bat':
     batch_generator_train = batch_generator_dat(train_files,train_csv_table,batch_size, pad=pad_length,
                                             print_padded=False, number=1)
+
+if file_extension=='npz':
+    batch_generator_valid = batch_generator_npz(valid_files,train_csv_table,batch_size, pad=pad_length,
+                                            print_padded=False, number=1)
+
+elif file_extension=='bat':
+    batch_generator_valid = batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length,
+                                                            print_padded=False, number=2)
+
+
 fit = model.fit_generator(batch_generator_train,
                           train_max,
-                    n_epoch,#callbacks=callbacks,
+                    n_epoch,callbacks=callbacks,
+                          validation_data=batch_generator_valid,nb_val_samples=valid_max,
                     class_weight={},max_q_size=1)
 
 # del batch_generator_train
 print('length valid files:')
 print(len(valid_files))
 import time
-valid_max = 6
 time.sleep(5)
 import gc
 gc.collect()
 print('pad: %s' %pad_length)
 
-if file_extension=='npz':
-    batch_generator_train = batch_generator_npz(valid_files,train_csv_table,batch_size, pad=pad_length,
-                                            print_padded=False, number=1)
 
-elif file_extension=='bat':
-    batch_generator_train = batch_generator_dat(valid_files,train_csv_table,batch_size, pad=pad_length,
-                                                            print_padded=True, number=2)
 
-evaluate = model.evaluate_generator(batch_generator_train,
-                    val_samples=valid_max,max_q_size=1)
+# evaluate = model.evaluate_generator(batch_generator_train,
+#                     val_samples=valid_max,max_q_size=1)
 
 print('training finished')
 if plot_acc_and_loss:
@@ -264,7 +272,7 @@ if plot_acc_and_loss:
     plt.legend(['train', 'valid'], loc='upper left');
     plt.show()
 
-create_submission(model,"vgg_feat_v1.csv", pad=pad_length)
+# create_submission(model,"vgg_feat_v1.csv", pad=pad_length)
 #
 
 

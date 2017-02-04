@@ -555,19 +555,23 @@ def batch_generator_npz(files, train_csv_table, batch_size, pad=600, print_padde
                 print(files[batch_size * counter:batch_size * (counter+1)])
             # if success==batch_size:
             #     break
-            try:
-                if print_padded:
-                    print("loading")
-                image = np.load(f)
-                if print_padded:
-                    print(sys.getsizeof(image))
-                image = image[:pad]
-                if print_padded:
-                    print(type(image))
-                    print(sys.getsizeof(image))
-                    print(image.shape)
-            except:
-                print("couldn't load")
+            # try:
+            if print_padded:
+                print("loading")
+            image = np.load(f, mmap_mode='r')
+            if print_padded:
+                print(type(image))
+                print(sys.getsizeof(image))
+                # print(image.shape)
+                print(image.files)
+            image = image['arr_0'][:pad]
+            if print_padded:
+                print(type(image))
+                print(len(image))
+                print(sys.getsizeof(image))
+                print(image.shape)
+            # except:
+            #     print("couldn't load")
             if print_padded:
                 print('loaded %s %s' %(f,number))
             padded_image = np.zeros((pad, 512, 32, 32))
